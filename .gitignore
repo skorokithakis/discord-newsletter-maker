@@ -1,0 +1,6 @@
+out/
+messages_with_links.txt
+.envrc
+__pycache__/
+*.swp
+newsletter.md
