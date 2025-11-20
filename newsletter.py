@@ -31,6 +31,11 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
   each link, anything you can gather from its description and the messages in
   the context. Don't say things you aren't sure about, but do try to make it a
   bit less dry than just a link description.
+- Give the links the following structure:
+  - **Bold title with proper case**
+    Description sentences.
+    https://link/to/the/page
+
 """.strip()
 
 
