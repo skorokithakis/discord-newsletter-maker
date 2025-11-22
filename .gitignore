@@ -4,3 +4,4 @@ out/
 __pycache__/
 *.swp
 newsletter.md
+.last_date

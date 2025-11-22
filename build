@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+for var in DISCORD_TOKEN DISCORD_GUILD LIST_ID TEMPLATE SUBJECT; do
+  if [[ -z ${!var:-} ]]; then
+    echo "Missing required environment variable: $var" >&2
+    exit 1
+  fi
+done
+
+LAST_DATE_FILE=".last_date"
+TODAY=$(date +%F)
+PREVIOUS_DATE=$TODAY
+
+if [[ -f $LAST_DATE_FILE ]]; then
+  STORED_DATE=$(<"$LAST_DATE_FILE")
+  if [[ $STORED_DATE =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    PREVIOUS_DATE=$STORED_DATE
+  else
+    echo "Warning: invalid date in $LAST_DATE_FILE, defaulting to today ($TODAY)" >&2
+  fi
+fi
+
+rm -f -- *.json
+mkdir -p out
+
+docker run --rm -v "${PWD}/out/:/out" tyrrrz/discordchatexporter exportguild \
+  --token "$DISCORD_TOKEN" \
+  --after "$PREVIOUS_DATE" \
+  --before "$TODAY" \
+  --guild "$DISCORD_GUILD" \
+  -f JSON \
+  --include-vc False \
+  --include-threads All
+
+./gather_links.py
+./newsletter.py messages_with_links.json
+./send_campaign.py --dry-run --subject "$SUBJECT" "$LIST_ID" "$TEMPLATE"
+
+echo "$TODAY" > "$LAST_DATE_FILE"
