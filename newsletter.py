@@ -33,6 +33,9 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
   most sense.
 - Each link is labeled with a number in the context: reference links by their
   number in your output as `link_number`.
+- Links that are similar, or talk about the same or similar things, should be
+  ordered next to each other. Order the links to maximize reader interest and
+  relevance.
 - Populate the structured fields: title, description, and link_number.
 - Do not include URLs or usernames in your output; we will attach them using the
   link number you provide.
