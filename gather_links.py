@@ -10,9 +10,10 @@
 import argparse
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from html.parser import HTMLParser
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Callable, Dict, Iterable, List, Optional, Sequence
 
 import requests
 from bs4 import BeautifulSoup
@@ -154,13 +155,31 @@ def iter_contexts(messages: Sequence[dict]) -> Iterable[List[dict]]:
         yield messages[start : idx + 1]
 
 
-def process_json_file(path: Path, fetch_preview) -> List[dict]:
+def parse_timestamp(timestamp: Optional[str]) -> Optional[datetime]:
+    if not timestamp:
+        return None
+    ts = timestamp.strip()
+    try:
+        return datetime.fromisoformat(ts)
+    except ValueError:
+        if ts.endswith("Z"):
+            try:
+                return datetime.fromisoformat(ts.removesuffix("Z") + "+00:00")
+            except ValueError:
+                return None
+    return None
+
+
+def process_json_file(
+    path: Path, fetch_preview, record_bounds: Callable[[Sequence[dict]], None]
+) -> List[dict]:
     data = json.loads(path.read_text(encoding="utf-8"))
     messages = data.get("messages") or []
     if not messages:
         return []
 
     messages = sorted(messages, key=lambda m: m.get("timestamp") or "")
+    record_bounds(messages)
 
     blocks: List[dict] = []
     for context in iter_contexts(messages):
@@ -209,14 +228,38 @@ def main() -> None:
 
     previewer = LinkPreviewer()
 
+    bounds: Dict[str, Optional[tuple[datetime, str]]] = {
+        "earliest": None,
+        "latest": None,
+    }
+
+    def update_bounds(messages: Sequence[dict]) -> None:
+        for message in messages:
+            timestamp = message.get("timestamp")
+            parsed = parse_timestamp(timestamp)
+            if not parsed:
+                continue
+            earliest = bounds["earliest"]
+            latest = bounds["latest"]
+            if earliest is None or parsed < earliest[0]:
+                bounds["earliest"] = (parsed, timestamp)  # keep original string
+            if latest is None or parsed > latest[0]:
+                bounds["latest"] = (parsed, timestamp)
+
     contexts: List[dict] = []
     for path in sorted(args.out_dir.glob("*.json")):
-        contexts.extend(process_json_file(path, previewer.fetch))
+        contexts.extend(process_json_file(path, previewer.fetch, update_bounds))
 
     payload = {"contexts": contexts}
     args.output.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+    if bounds["earliest"] is None or bounds["latest"] is None:
+        print("No messages with timestamps found.")
+    else:
+        print(f"Earliest message timestamp: {bounds['earliest'][1]}")
+        print(f"Latest message timestamp: {bounds['latest'][1]}")
 
 
 if __name__ == "__main__":
