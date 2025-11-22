@@ -1,4 +1,10 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run
+# /// script
+# requires-python = ">=3.13"
+# dependencies = [
+#   "requests",
+# ]
+# ///
 """Send a one-off Listmonk campaign from a local template."""
 
 import argparse

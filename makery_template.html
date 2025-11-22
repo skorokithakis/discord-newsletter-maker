@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light only">
+    <meta name="supported-color-schemes" content="light only">
+    <title>The Makery - Links roundup</title>
+    <style>
+        .link-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .link-list li {
+            background-color: #ffffff;
+            border-radius: 6px;
+            border-left: 4px solid #9B8AA5;
+            padding: 15px 18px;
+            margin-bottom: 12px;
+        }
+
+        .link-list li:nth-child(4n+1) {
+            border-left-color: #9B8AA5;
+        }
+
+        .link-list li:nth-child(4n+2) {
+            border-left-color: #E8847C;
+        }
+
+        .link-list li:nth-child(4n+3) {
+            border-left-color: #F5A962;
+        }
+
+        .link-list li:nth-child(4n) {
+            border-left-color: #5B9AA9;
+        }
+
+        .link-list li:last-child {
+            margin-bottom: 0;
+        }
+
+        .link-list strong {
+            display: block;
+            font-size: 16px;
+            color: #2D3748;
+            line-height: 1.4;
+            margin-bottom: 6px;
+        }
+
+        .link-list p {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        .link-list a {
+            color: #5B9AA9;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .link-list a:hover {
+            text-decoration: underline;
+        }
+
+        .link-list .poster {
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #F5F2EB; color: #2D3748;">
+    <!-- Email wrapper -->
+    <table role="presentation" style="width: 100%; border-collapse: collapse; background-color: #F5F2EB;">
+        <tr>
+            <td align="center" style="padding: 20px 10px;">
+                <!-- Main content container -->
+                <table role="presentation" style="max-width: 600px; width: 100%; border-collapse: collapse; background-color: #F5F2EB; border-radius: 8px;">
+                    <!-- Header -->
+                    <tr>
+                        <td style="padding: 30px 25px; text-align: center;">
+                            <!-- Color bar matching the M logo colors -->
+                            <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+                                <tr>
+                                    <td style="height: 6px; background-color: #9B8AA5; border-radius: 3px 0 0 3px;"></td>
+                                    <td style="height: 6px; background-color: #E8847C;"></td>
+                                    <td style="height: 6px; background-color: #F5A962;"></td>
+                                    <td style="height: 6px; background-color: #5B9AA9; border-radius: 0 3px 3px 0;"></td>
+                                </tr>
+                            </table>
+                            <h1 style="margin: 0; color: #2D3748; font-size: 32px; font-weight: 700; letter-spacing: -0.5px;">The Makery</h1>
+                            <p style="margin: 10px 0 0 0; color: #666; font-size: 15px;">What we've been talking about.</p>
+                        </td>
+                    </tr>
+
+                    <!-- Greeting -->
+                    <tr>
+                        <td style="padding: 10px 25px 10px 25px;">
+                            <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #2D3748;">
+                                Hello!
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Intro text -->
+                    <tr>
+                        <td style="padding: 5px 25px 25px 25px;">
+                            <p style="margin: 0; font-size: 16px; line-height: 1.6; color: #555;">
+                                Here's what we've been talking about on Discord lately:
+                            </p>
+                        </td>
+                    </tr>
+
+                    <!-- Links section -->
+                    <tr>
+                        <td style="padding: 0 25px 25px 25px;">
+                            {{ LINK_CONTENT }}
+                        </td>
+                    </tr>
+
+                    <!-- Discord CTA -->
+                    <tr>
+                        <td style="padding: 0 25px 25px 25px; text-align: center;">
+                            <table role="presentation" style="margin: 0 auto;">
+                                <tr>
+                                    <td style="border-radius: 6px; background-color: #5B9AA9;">
+                                        <a href="https://discord.gg/vFZd3CASmX" style="display: inline-block; padding: 14px 32px; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: 600; border-radius: 6px;">
+                                            Join the conversation on Discord
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+
+                    <!-- Footer -->
+                    <tr>
+                        <td style="padding: 20px 25px; text-align: center;">
+                            <!-- Color bar -->
+                            <table role="presentation" style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
+                                <tr>
+                                    <td style="height: 4px; background-color: #9B8AA5; border-radius: 2px 0 0 2px;"></td>
+                                    <td style="height: 4px; background-color: #E8847C;"></td>
+                                    <td style="height: 4px; background-color: #F5A962;"></td>
+                                    <td style="height: 4px; background-color: #5B9AA9; border-radius: 0 2px 2px 0;"></td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
