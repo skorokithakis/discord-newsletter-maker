@@ -12,16 +12,20 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import List, Sequence
+from typing import List
+from typing import Sequence
 
-from pydantic import BaseModel, ValidationError
-
-from models import NewsletterLink, NewsletterPayload
 from openai import APIConnectionError
 from openai import APIError
 from openai import APITimeoutError
 from openai import AuthenticationError
 from openai import OpenAI
+from pydantic import BaseModel
+from pydantic import ValidationError
+
+from models import NewsletterGroup
+from models import NewsletterLink
+from models import NewsletterPayload
 
 SYSTEM_PROMPT = """
 You are a newsletter editor for the newsletter of a maker community called 'The
@@ -29,22 +33,16 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
 
 - Decide which links are worth including (educational, insightful, noteworthy).
 - Drop broken or spammy links.
-- Drop links that are just us talking to each other or updating each other. That
-  includes anything that would not really be of interest to a casual newsletter
-  recipient.
-- Keep things concise. Feel free to put the links in whatever order makes the
-  most sense.
-- Each link is labeled with a number in the context: reference links by their
-  number in your output as `link_number`.
-- Links that are similar, or talk about the same or similar things, should be
-  ordered next to each other. Order the links to maximize reader interest and
-  relevance.
+- Drop any links that would not really be of interest to a casual newsletter recipient. This includes deep links to project, internal business, etc. If it doesn't belong on a newsletter that would interest a random maker who has no affiliation with the Makery, do not include it.
+- Each link is labeled with a number in the context: reference links by their number in your output as `link_number`.
+- Group related links under concise section titles. Titles should be "Sentence case", not "Title Case".
+- Links that are similar, or talk about the same or similar things, should be added to the same group. Design the groups and order the links in them to maximize reader interest and relevance.
 - Populate the structured fields: title, description, and link_number.
-- Do not include URLs or usernames in your output; we will attach them using the
-  link number you provide.
+- Return your response as groups, each with a title and a list of links.
+- Do not include URLs or usernames in your output; we will attach them using the link number you provide.
 - Use the supplied username for context (fall back to "Unknown" if missing).
 - Keep descriptions factual and concise; do not invent details.
-
+- If any links don't fit in any other groups, add them to a "Various" group.
 """.strip()
 
 
@@ -54,8 +52,13 @@ class LLMNewsletterLink(BaseModel):
     link_number: int
 
 
-class LLMNewsletterPayload(BaseModel):
+class LLMNewsletterGroup(BaseModel):
+    title: str
     links: List[LLMNewsletterLink]
+
+
+class LLMNewsletterPayload(BaseModel):
+    groups: List[LLMNewsletterGroup]
 
 
 def load_contexts(path: Path) -> List[dict]:
@@ -95,7 +98,9 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
             url = link.get("url") or ""
             posted_by = link.get("posted_by") or "Unknown"
             if url:
-                lines.append(f"    [link #{link_counter}] {url} (posted by {posted_by})")
+                lines.append(
+                    f"    [link #{link_counter}] {url} (posted by {posted_by})"
+                )
                 link_lookup[link_counter] = {"url": url, "posted_by": posted_by}
                 link_counter += 1
             description = link.get("description") or ""
@@ -110,6 +115,7 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
 def run_completion(
     client: OpenAI, model: str, context: str, temperature: float
 ) -> LLMNewsletterPayload:
+    print(context)
     response = client.chat.completions.parse(
         model=model,
         temperature=temperature,
@@ -120,7 +126,8 @@ def run_completion(
                 "role": "user",
                 "content": (
                     "Create the newsletter from these Discord snippets. Links are labeled "
-                    "with [link #N]; refer to them by number in your output.\n\n" + context
+                    "with [link #N]; refer to them by number in your output. Group related "
+                    "links together and give each group a concise title.\n\n" + context
                 ),
             },
         ],
@@ -142,20 +149,25 @@ def attach_link_metadata(
     llm_payload: LLMNewsletterPayload, link_lookup: dict[int, dict[str, str]]
 ) -> NewsletterPayload:
     """Replace link numbers from the model with the source URL/user details."""
-    links: List[NewsletterLink] = []
-    for link in llm_payload.links:
-        source = link_lookup.get(link.link_number)
-        if source is None:
-            raise SystemExit(f"Model referenced unknown link number: {link.link_number}")
-        links.append(
-            NewsletterLink(
-                title=link.title,
-                description=link.description,
-                url=source.get("url") or "",
-                posted_by=source.get("posted_by") or "Unknown",
+    groups: List[NewsletterGroup] = []
+    for group in llm_payload.groups:
+        resolved_links: List[NewsletterLink] = []
+        for link in group.links:
+            source = link_lookup.get(link.link_number)
+            if source is None:
+                raise SystemExit(
+                    f"Model referenced unknown link number: {link.link_number}"
+                )
+            resolved_links.append(
+                NewsletterLink(
+                    title=link.title,
+                    description=link.description,
+                    url=source.get("url") or "",
+                    posted_by=source.get("posted_by") or "Unknown",
+                )
             )
-        )
-    return NewsletterPayload(links=links)
+        groups.append(NewsletterGroup(title=group.title, links=resolved_links))
+    return NewsletterPayload(groups=groups)
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -212,7 +224,10 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     output = payload.model_dump_json(indent=2)
     Path("curated_links.json").write_text(output, encoding="utf-8")
-    print(f"Wrote {len(payload.links)} links to curated_links.json")
+    total_links = sum(len(group.links) for group in payload.groups)
+    print(
+        f"Wrote {total_links} links across {len(payload.groups)} groups to curated_links.json"
+    )
 
 
 if __name__ == "__main__":

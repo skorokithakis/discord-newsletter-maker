@@ -12,5 +12,10 @@ class NewsletterLink(BaseModel):
     posted_by: str
 
 
-class NewsletterPayload(BaseModel):
+class NewsletterGroup(BaseModel):
+    title: str
     links: List[NewsletterLink]
+
+
+class NewsletterPayload(BaseModel):
+    groups: List[NewsletterGroup]
