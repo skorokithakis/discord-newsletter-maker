@@ -33,12 +33,13 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
 
 - Decide which links are worth including (educational, insightful, noteworthy).
 - Drop broken or spammy links.
-- Drop any links that would not really be of interest to a casual newsletter recipient. This includes deep links to project, internal business, etc. If it doesn't belong on a newsletter that would interest a random maker who has no affiliation with the Makery, do not include it.
+- Drop any links that would NOT REALLY BE OF INTEREST TO A CASUAL NEWSLETTER RECIPIENT. This includes deep links to project, internal business, etc. If it doesn't belong on a newsletter that would interest a random maker who has no affiliation with the Makery, DO NOT INCLUDE IT.
 - Each link is labeled with a number in the context: reference links by their number in your output as `link_number`.
 - Group related links under concise section titles. Titles should be "Sentence case", not "Title Case".
 - Links that are similar, or talk about the same or similar things, should be added to the same group. Design the groups and order the links in them to maximize reader interest and relevance.
 - Populate the structured fields: title, description, and link_number.
 - Return your response as groups, each with a title and a list of links.
+- Include a short intro sentence that summarizes the main themes of the links, as an intro. Expose it as the `intro` field in your structured response.
 - Do not include URLs or usernames in your output; we will attach them using the link number you provide.
 - Use the supplied username for context (fall back to "Unknown" if missing).
 - Keep descriptions factual and concise; do not invent details.
@@ -58,6 +59,7 @@ class LLMNewsletterGroup(BaseModel):
 
 
 class LLMNewsletterPayload(BaseModel):
+    intro: str
     groups: List[LLMNewsletterGroup]
 
 
@@ -196,7 +198,7 @@ def attach_link_metadata(
                 )
             )
         groups.append(NewsletterGroup(title=group.title, links=resolved_links))
-    return NewsletterPayload(groups=groups)
+    return NewsletterPayload(intro=llm_payload.intro, groups=groups)
 
 
 def main(argv: Sequence[str] | None = None) -> None:

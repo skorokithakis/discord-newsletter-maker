@@ -268,8 +268,9 @@ def main():
         )
 
     payload = load_curated_links()
+    intro = payload.intro.strip() or "Here's what we've been talking about on Discord lately:"
     link_content = render_newsletter(payload)
-    variables = {"LINK_CONTENT": link_content}
+    variables = {"LINK_CONTENT": link_content, "INTRO": intro}
     body = render_template(args.template, variables)
     body = css_inline.inline(body)
 

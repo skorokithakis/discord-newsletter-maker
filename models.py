@@ -18,4 +18,5 @@ class NewsletterGroup(BaseModel):
 
 
 class NewsletterPayload(BaseModel):
+    intro: str = ""
     groups: List[NewsletterGroup]
