@@ -29,6 +29,9 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
 
 - Decide which links are worth including (educational, insightful, noteworthy).
 - Drop broken or spammy links.
+- Drop links that are just us talking to each other or updating each other. That
+  includes anything that would not really be of interest to a casual newsletter
+  recipient.
 - Keep things concise. Feel free to put the links in whatever order makes the
   most sense.
 - Each link is labeled with a number in the context: reference links by their

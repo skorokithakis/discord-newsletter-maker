@@ -23,8 +23,11 @@ if [[ -f $LAST_DATE_FILE ]]; then
   fi
 fi
 
+rm -rf -- out
 rm -f -- *.json
 mkdir -p out
+
+echo "Fetching messages from $PREVIOUS_DATE (after) to $TODAY (before)..."
 
 docker run --rm -v "${PWD}/out/:/out" tyrrrz/discordchatexporter exportguild \
   --token "$DISCORD_TOKEN" \
