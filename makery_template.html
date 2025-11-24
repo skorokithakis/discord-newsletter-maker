@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light only">
     <meta name="supported-color-schemes" content="light only">
-    <title>The Makery - Links roundup</title>
+    <title>{{ .Campaign.Subject }}</title>
     <style>
         body {
             margin: 0;
@@ -18,7 +18,7 @@
         .email-wrapper {
             width: 100%;
             border-collapse: collapse;
-            background-color: #ffffff;
+            background-color: #F5F2EB;
         }
 
         .email-wrapper-cell {
@@ -30,8 +30,6 @@
             width: 100%;
             border-collapse: collapse;
             background-color: #F5F2EB;
-            border: 1px solid #E2DFD6;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
         }
 
         .header-cell {
@@ -40,7 +38,6 @@
         }
 
         .logo-container {
-            background-color: #f4f1e2;
             padding: 25px 0 20px 0;
             margin-bottom: 20px;
         }
@@ -118,17 +115,6 @@
             margin: 10px 0 0 0;
             color: #666;
             font-size: 15px;
-        }
-
-        .greeting-cell {
-            padding: 10px 25px 10px 25px;
-        }
-
-        .greeting {
-            margin: 0;
-            font-size: 16px;
-            line-height: 1.6;
-            color: #2D3748;
         }
 
         .intro-cell {
@@ -240,6 +226,11 @@
         .link-group-title:first-child {
             margin-top: 0;
         }
+
+        img {
+            max-width: 100%;
+            height: auto;
+        }
     </style>
 </head>
 <body>
@@ -248,6 +239,7 @@
         <tr>
             <td align="center" class="email-wrapper-cell">
                 <!-- Main content container -->
+                <!--[if mso]><table width="600" align="center"><tr><td><![endif]-->
                 <table role="presentation" class="content-container">
                     <!-- Logo -->
                     <tr>
@@ -269,16 +261,7 @@
                                 </tr>
                             </table>
                             <h1 class="title">The Makery</h1>
-                            <p class="subtitle">What we've been talking about.</p>
-                        </td>
-                    </tr>
-
-                    <!-- Greeting -->
-                    <tr>
-                        <td class="greeting-cell">
-                            <p class="greeting">
-                                Hello!
-                            </p>
+                            <p class="subtitle">Just makin' stuff.</p>
                         </td>
                     </tr>
 
@@ -286,6 +269,7 @@
                     <tr>
                         <td class="intro-cell">
                             <p class="intro">
+                                Hello!<br>
                                 Here's what we've been talking about on Discord lately:
                             </p>
                         </td>
@@ -325,9 +309,16 @@
                                     <td class="color-bar-teal-footer"></td>
                                 </tr>
                             </table>
+                            <p style="margin: 10px 0 0 0; font-size: 12px; color: #999;">
+                                <a href="{{ UnsubscribeURL }}" style="color: #999;">{{ L.T "email.unsub" }}</a>
+                                &nbsp;&nbsp;·&nbsp;&nbsp;
+                                <a href="{{ MessageURL }}" style="color: #999;">{{ L.T "email.viewInBrowser" }}</a>
+                            </p>
+                            {{ TrackView }}
                         </td>
                     </tr>
                 </table>
+                <!--[if mso]></td></tr></table><![endif]-->
             </td>
         </tr>
     </table>
