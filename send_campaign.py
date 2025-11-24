@@ -20,7 +20,7 @@ from typing import Any, List
 import css_inline
 import requests
 
-from models import NewsletterLink, NewsletterPayload
+from models import NewsletterPayload
 
 
 def parse_args() -> argparse.Namespace:

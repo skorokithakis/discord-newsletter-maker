@@ -78,23 +78,10 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
     Returns the rendered context and a mapping from link number to its
     source URL/posted_by so we can reattach them after the model chooses.
     """
-    lines: List[str] = []
-    link_lookup: dict[int, dict[str, str]] = {}
-    link_counter = 1
-    for context in contexts:
-        source = context.get("source") or "unknown file"
-        timestamp = context.get("timestamp") or "unknown time"
-        lines.append(f"=== {source} @ {timestamp} ===")
 
-        for message in context.get("messages") or []:
-            author = message.get("author") or "Unknown"
-            content = message.get("content") or ""
-            message_lines = content.splitlines() or [""]
-            lines.append(f"{author}: {message_lines[0]}")
-            for line in message_lines[1:]:
-                lines.append(f"    {line}")
-
-        for link in context.get("links") or []:
+    def render_links_inline(links: List[dict], link_counter: int) -> int:
+        """Append link/description lines and advance the counter."""
+        for link in links:
             url = link.get("url") or ""
             posted_by = link.get("posted_by") or "Unknown"
             if url:
@@ -106,6 +93,48 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
             description = link.get("description") or ""
             if description:
                 lines.append(f"    [description] {description}")
+        return link_counter
+
+    lines: List[str] = []
+    link_lookup: dict[int, dict[str, str]] = {}
+    link_counter = 1
+    for context in contexts:
+        source = context.get("source") or "unknown file"
+        timestamp = context.get("timestamp") or "unknown time"
+        lines.append(f"=== {source} @ {timestamp} ===")
+
+        messages = context.get("messages") or []
+        links = context.get("links") or []
+        link_index = context.get("link_index")
+
+        if not isinstance(link_index, int) or not (0 <= link_index < len(messages)):
+            link_index = None
+
+        # Fallback to locate the link message by URL when older data doesn't
+        # include link_index.
+        if link_index is None and links:
+            urls = [link.get("url") for link in links if link.get("url")]
+            for idx, message in enumerate(messages):
+                content = message.get("content") or ""
+                if any(url and url in content for url in urls):
+                    link_index = idx
+                    break
+
+        for idx, message in enumerate(messages):
+            author = message.get("author") or "Unknown"
+            content = message.get("content") or ""
+            message_lines = content.splitlines() or [""]
+            lines.append(f"{author}: {message_lines[0]}")
+            for line in message_lines[1:]:
+                lines.append(f"    {line}")
+
+            if links and link_index is not None and idx == link_index:
+                link_counter = render_links_inline(links, link_counter)
+
+        # If we couldn't find a position for the links, keep the old behaviour
+        # of appending them at the end so we don't drop anything.
+        if links and link_index is None:
+            link_counter = render_links_inline(links, link_counter)
 
         lines.append("")
 

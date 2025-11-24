@@ -4,22 +4,34 @@
 # dependencies = [
 #   "requests",
 #   "beautifulsoup4",
+#   "openai",
 # ]
 # ///
-
 import argparse
 import json
+import os
 import re
 from datetime import datetime
-from pathlib import Path
 from html.parser import HTMLParser
-from typing import Callable, Dict, Iterable, List, Optional, Sequence
+from pathlib import Path
+from typing import Callable
+from typing import Dict
+from typing import Iterable
+from typing import List
+from typing import Optional
+from typing import Sequence
 
 import requests
 from bs4 import BeautifulSoup
+from openai import APIConnectionError
+from openai import APIError
+from openai import APITimeoutError
+from openai import AuthenticationError
+from openai import OpenAI
 
 USER_AGENT = "discord-newsletter-fetcher/0.1 (+https://example.invalid)"
 LINK_RE = re.compile(r"https?://\S+")
+SUMMARY_MODEL = "gpt-5-mini-2025-08-07"
 
 
 class MetaParser(HTMLParser):
@@ -61,11 +73,82 @@ def extract_text(html: str) -> str:
     return " ".join(text.split())
 
 
+class PageSummarizer:
+    """Wrap a small LLM call to summarize page text."""
+
+    def __init__(
+        self,
+        client: Optional[OpenAI],
+        model: str = SUMMARY_MODEL,
+    ) -> None:
+        self.client = client
+        self.model = model
+
+    @classmethod
+    def create(cls) -> "PageSummarizer":
+        client: Optional[OpenAI]
+        try:
+            api_key = os.getenv("OPENAI_API_KEY")
+            client = OpenAI(api_key=api_key) if api_key else None
+            if client is None:
+                print("[summary] OPENAI_API_KEY not set; skipping summaries.")
+        except Exception as exc:
+            print(f"[summary] Failed to initialize OpenAI client: {exc}")
+            client = None
+        return cls(client=client)
+
+    def summarize(self, text: str) -> Optional[str]:
+        if not self.client:
+            return None
+
+        clean_text = text.strip()
+        if not clean_text:
+            return None
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You summarize long web pages into 2-3 concise sentences. "
+                            "Focus on the main topic, key findings, and notable details "
+                            "that would matter to a newsletter reader."
+                        ),
+                    },
+                    {"role": "user", "content": clean_text},
+                ],
+            )
+        except (
+            APIError,
+            APIConnectionError,
+            APITimeoutError,
+            AuthenticationError,
+        ) as exc:
+            print(f"[summary] OpenAI API error: {exc}")
+            return None
+        except Exception as exc:  # defensive catch-all
+            print(f"[summary] Unexpected error: {exc}")
+            return None
+
+        choice = response.choices[0]
+        content = getattr(choice.message, "content", None)
+        if not content:
+            return None
+        return content.strip()
+
+
 class LinkPreviewer:
     """Fetch link metadata once and cache results."""
 
-    def __init__(self, session: Optional[requests.Session] = None) -> None:
+    def __init__(
+        self,
+        session: Optional[requests.Session] = None,
+        summarizer: Optional[PageSummarizer] = None,
+    ) -> None:
         self.session = session or requests.Session()
+        self.summarizer = summarizer
         self.cache: Dict[str, Optional[str]] = {}
 
     def fetch(self, url: str) -> Optional[str]:
@@ -102,12 +185,22 @@ class LinkPreviewer:
             print(f"[fetch] text parse error: {url}")
             description = None
 
-        if not description:
-            description = self._best_description(meta_parser.meta)
+        summary: Optional[str] = None
+        if description:
+            summary = (
+                self.summarizer.summarize(description) if self.summarizer else None
+            )
+        if summary:
+            description = summary
+        else:
+            meta_description = self._best_description(meta_parser.meta)
+            if meta_description:
+                description = meta_description
+
         if description:
             description = self._normalize(description)
         self.cache[url] = description or None
-        print(f"[fetch] description length: {len(description) if description else 0}")
+        print(f"[fetch] {description}")
         return description
 
     @staticmethod
@@ -153,7 +246,8 @@ def iter_contexts(messages: Sequence[dict]) -> Iterable[tuple[List[dict], dict]]
             continue
         start = max(0, idx - 10)
         end = min(len(messages), idx + 11)
-        yield messages[start:end], message
+        # Return a concrete list so downstream consumers don't have to rely on slicing semantics.
+        yield list(messages[start:end]), message
 
 
 def parse_timestamp(timestamp: Optional[str]) -> Optional[datetime]:
@@ -186,6 +280,7 @@ def process_json_file(
     for context, link_message in iter_contexts(messages):
         timestamp = link_message.get("timestamp") or "unknown time"
         link_author = format_message(link_message)["author"]
+        link_idx_in_context = context.index(link_message)
         links = []
         seen_links: set[str] = set()
         for link in LINK_RE.findall(link_message.get("content") or ""):
@@ -204,6 +299,7 @@ def process_json_file(
             {
                 "source": path.name,
                 "timestamp": timestamp,
+                "link_index": link_idx_in_context,
                 "messages": [format_message(message) for message in context],
                 "links": links,
             }
@@ -233,7 +329,8 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    previewer = LinkPreviewer()
+    summarizer = PageSummarizer.create()
+    previewer = LinkPreviewer(summarizer=summarizer)
 
     bounds: Dict[str, Optional[tuple[datetime, str]]] = {
         "earliest": None,
@@ -243,6 +340,8 @@ def main() -> None:
     def update_bounds(messages: Sequence[dict]) -> None:
         for message in messages:
             timestamp = message.get("timestamp")
+            if not isinstance(timestamp, str):
+                continue
             parsed = parse_timestamp(timestamp)
             if not parsed:
                 continue
