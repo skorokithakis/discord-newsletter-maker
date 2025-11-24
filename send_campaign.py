@@ -136,25 +136,24 @@ def render_newsletter(payload: NewsletterPayload) -> str:
     for group in payload.groups:
         if not group.links:
             continue
-        lines.extend(
-            [
-                f'<h3 class="link-group-title">{group.title}</h3>',
-                '<ul class="link-list">',
-            ]
-        )
+        lines.append(f'<h3 class="link-group-title">{group.title}</h3>')
         for link in group.links:
             border_color = BORDER_COLORS[border_counter % len(BORDER_COLORS)]
             border_counter += 1
             lines.extend(
                 [
-                    f'  <li style="border-left-color: {border_color};">',
-                    f"    <strong>{link.title}</strong>",
-                    f'    <p>{link.description} — <span class="poster">{link.posted_by}</span></p>',
-                    f'    <a href="{link.url}">{link.url}</a>',
-                    "  </li>",
+                    '<table role="presentation" class="link-card-table">',
+                    "  <tr>",
+                    f'    <td style="width: 4px; background-color: {border_color}; border-radius: 6px 0 0 6px;"></td>',
+                    '    <td class="link-card-cell">',
+                    f'      <strong class="link-card-title">{link.title}</strong>',
+                    f'      <p class="link-card-description">{link.description} — <span class="link-card-poster">{link.posted_by}</span></p>',
+                    f'      <a href="{link.url}" class="link-card-url">{link.url}</a>',
+                    "    </td>",
+                    "  </tr>",
+                    "</table>",
                 ]
             )
-        lines.append("</ul>")
     return "\n".join(lines)
 
 
