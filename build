@@ -40,6 +40,12 @@ docker run --rm -v "${PWD}/out/:/out" tyrrrz/discordchatexporter exportguild \
 
 ./gather_links.py
 ./newsletter.py messages_with_links.json
-./send_campaign.py --dry-run --subject "$SUBJECT" "$LIST_ID" "$TEMPLATE"
+
+TEMPLATE_ID_ARGS=()
+if [[ -n ${TEMPLATE_ID:-} ]]; then
+  TEMPLATE_ID_ARGS=(--template-id "$TEMPLATE_ID")
+fi
+
+./send_campaign.py --dry-run --subject "$SUBJECT" "${TEMPLATE_ID_ARGS[@]}" "$LIST_ID" "$TEMPLATE"
 
 echo "$TODAY" > "$LAST_DATE_FILE"
