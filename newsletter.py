@@ -43,6 +43,7 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
 - Do not include URLs or usernames in your output; we will attach them using the link number you provide.
 - Use the supplied username for context (fall back to "Unknown" if missing).
 - Keep descriptions factual and concise; do not invent details.
+- For each link's description, include not just a summary of the web page content itself, but also capture the gist of what the community is saying about the link. Incorporate any opinions, insights, reactions, or general sentiment expressed in the surrounding chat messages. This community context should enrich the description and help readers understand why the link is interesting or valuable to the community.
 - If any links don't fit in any other groups, add them to a "Various" group.
 """.strip()
 
