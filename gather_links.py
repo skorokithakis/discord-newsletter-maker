@@ -4,6 +4,7 @@
 # dependencies = [
 #   "requests",
 #   "beautifulsoup4",
+#   "yt-info-extract",
 #   "openai",
 # ]
 # ///
@@ -20,6 +21,8 @@ from typing import Iterable
 from typing import List
 from typing import Optional
 from typing import Sequence
+from urllib.parse import parse_qs
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,6 +31,7 @@ from openai import APIError
 from openai import APITimeoutError
 from openai import AuthenticationError
 from openai import OpenAI
+from yt_info_extract import get_video_info
 
 USER_AGENT = "discord-newsletter-fetcher/0.1 (+https://example.invalid)"
 LINK_RE = re.compile(r"https?://\S+")
@@ -117,8 +121,24 @@ def fetch_meta_description(url: str, *, fetcher_name: str) -> Optional[str]:
     return None
 
 
-def youtube_fetcher(url: str) -> Optional[str]:
-    """Extract video description from YouTube pages."""
+def _extract_youtube_video_id(url: str) -> Optional[str]:
+    """Parse common YouTube URL shapes to get the video id."""
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    if "youtu.be" in host:
+        video_id = parsed.path.lstrip("/").split("/", 1)[0]
+        return video_id or None
+    if "youtube.com" in host:
+        if parsed.path.startswith("/watch"):
+            return parse_qs(parsed.query).get("v", [None])[0]
+        if parsed.path.startswith("/shorts/"):
+            parts = parsed.path.split("/")
+            return parts[2] if len(parts) >= 3 else None
+    return None
+
+
+def _youtube_scrape_fallback(url: str) -> Optional[str]:
+    """Legacy HTML scraping when API-less extraction fails."""
     try:
         response = FETCHER_SESSION.get(
             url, headers={"User-Agent": USER_AGENT}, timeout=8
@@ -142,6 +162,34 @@ def youtube_fetcher(url: str) -> Optional[str]:
     except Exception as exception:
         print(f"[youtube_fetcher] error for {url}: {exception}")
         return None
+
+
+def youtube_fetcher(url: str) -> Optional[str]:
+    """Extract video description from YouTube pages."""
+    video_id = _extract_youtube_video_id(url)
+    if video_id:
+        try:
+            info = get_video_info(video_id)
+            if info:
+                parts: List[str] = []
+                title = info.get("title")
+                published = info.get("publication_date")
+                description = info.get("description")
+                if title:
+                    parts.append(title)
+                if published:
+                    parts.append(f"Published: {published}")
+                if description:
+                    parts.append(description)
+                if parts:
+                    return "\n".join(parts)
+                print(f"[youtube_fetcher] missing description in info: {url}")
+        except Exception as exc:
+            print(f"[youtube_fetcher] get_video_info failed: {exc}")
+    else:
+        print(f"[youtube_fetcher] could not parse video id: {url}")
+
+    return _youtube_scrape_fallback(url)
 
 
 def github_fetcher(url: str) -> Optional[str]:
