@@ -32,6 +32,7 @@ from openai import OpenAI
 USER_AGENT = "discord-newsletter-fetcher/0.1 (+https://example.invalid)"
 LINK_RE = re.compile(r"https?://\S+")
 SUMMARY_MODEL = "gpt-5-mini-2025-08-07"
+FETCHER_SESSION = requests.Session()
 
 
 class MetaParser(HTMLParser):
@@ -73,6 +74,146 @@ def extract_text(html: str) -> str:
     return " ".join(text.split())
 
 
+def best_description(meta: Dict[str, str]) -> Optional[str]:
+    """Extract the best available description from meta tags."""
+    for key in (
+        "og:description",
+        "description",
+        "twitter:description",
+        "og:title",
+        "title",
+    ):
+        value = meta.get(key)
+        if value:
+            return value
+    return None
+
+
+def fetch_meta_description(url: str, *, fetcher_name: str) -> Optional[str]:
+    """Download a page and pull the best meta description from its tags."""
+    try:
+        response = FETCHER_SESSION.get(
+            url, headers={"User-Agent": USER_AGENT}, timeout=8
+        )
+        if not response.ok or "text/html" not in response.headers.get(
+            "content-type", ""
+        ):
+            print(f"[{fetcher_name}] skipped (status/content-type): {url}")
+            return None
+    except requests.RequestException as exception:
+        print(f"[{fetcher_name}] request error for {url}: {exception}")
+        return None
+
+    try:
+        meta_parser = MetaParser()
+        meta_parser.feed(response.text)
+        meta_description = best_description(meta_parser.meta)
+        if meta_description:
+            return meta_description
+        print(f"[{fetcher_name}] no meta description: {url}")
+    except Exception as exception:
+        print(f"[{fetcher_name}] parsing error for {url}: {exception}")
+
+    return None
+
+
+def youtube_fetcher(url: str) -> Optional[str]:
+    """Extract video description from YouTube pages."""
+    try:
+        response = FETCHER_SESSION.get(
+            url, headers={"User-Agent": USER_AGENT}, timeout=8
+        )
+        if not response.ok:
+            print(f"[youtube_fetcher] failed to fetch: {url}")
+            return None
+
+        soup = BeautifulSoup(response.content, "html.parser")
+        pattern = re.compile(r'(?<=shortDescription":").*(?=","isCrawlable)')
+        matches = pattern.findall(str(soup))
+        if matches:
+            description = matches[0].replace("\\n", "\n")
+            return description
+        else:
+            print(f"[youtube_fetcher] no description found: {url}")
+            return None
+    except requests.RequestException as exception:
+        print(f"[youtube_fetcher] request error for {url}: {exception}")
+        return None
+    except Exception as exception:
+        print(f"[youtube_fetcher] error for {url}: {exception}")
+        return None
+
+
+def github_fetcher(url: str) -> Optional[str]:
+    """Extract repository description for GitHub pages via meta tags."""
+    description = fetch_meta_description(url, fetcher_name="github_fetcher")
+    if description:
+        return description
+
+    # Fallback to repository root for deep links if the page lacked meta tags.
+    parts = url.split("/")
+    if len(parts) >= 5 and parts[2] == "github.com":
+        repo_url = f"https://github.com/{parts[3]}/{parts[4]}"
+        if repo_url != url:
+            return fetch_meta_description(repo_url, fetcher_name="github_fetcher")
+    return None
+
+
+def mastodon_fetcher(url: str) -> Optional[str]:
+    """Extract toot preview using Mastodon's Open Graph description."""
+    return fetch_meta_description(url, fetcher_name="mastodon_fetcher")
+
+
+def default_fetcher(url: str) -> Optional[str]:
+    """Download page and extract text using BeautifulSoup, fallback to meta description."""
+    try:
+        response = FETCHER_SESSION.get(
+            url, headers={"User-Agent": USER_AGENT}, timeout=8
+        )
+        if not response.ok or "text/html" not in response.headers.get(
+            "content-type", ""
+        ):
+            print(f"[default_fetcher] skipped (status/content-type): {url}")
+            return None
+    except requests.RequestException:
+        print(f"[default_fetcher] request error: {url}")
+        return None
+
+    # Try to extract full text first.
+    try:
+        text = extract_text(response.text)
+        if text:
+            return text
+    except Exception:
+        print(f"[default_fetcher] text extraction failed: {url}")
+
+    # Fallback to meta description.
+    try:
+        meta_parser = MetaParser()
+        meta_parser.feed(response.text)
+        meta_description = best_description(meta_parser.meta)
+        if meta_description:
+            return meta_description
+    except Exception:
+        print(f"[default_fetcher] meta parsing failed: {url}")
+
+    return None
+
+
+FETCHERS: List[tuple[re.Pattern, Callable[[str], Optional[str]]]] = [
+    (re.compile(r"youtube\.com/(watch|shorts)"), youtube_fetcher),
+    (re.compile(r"youtu\.be/"), youtube_fetcher),
+    (
+        re.compile(
+            r"github\.com/[^/]+/[^/]+/(blob|tree|commit|pull|issues|actions|wiki)/"
+        ),
+        github_fetcher,
+    ),
+    (re.compile(r"https?://[^/]+/@[^/]+/\d+"), mastodon_fetcher),
+    (re.compile(r".*"), default_fetcher),
+]
+
+
 class PageSummarizer:
     """Wrap a small LLM call to summarize page text."""
 
@@ -112,9 +253,11 @@ class PageSummarizer:
                     {
                         "role": "system",
                         "content": (
-                            "You summarize long web pages into 2-3 concise sentences. "
+                            "You summarize long web pages into 2-3 concise English sentences. "
                             "Focus on the main topic, key findings, and notable details "
-                            "that would matter to a newsletter reader."
+                            "that would matter to a newsletter reader. Return the empty "
+                            "string if there wasn't enough information in the text for a"
+                            " summary."
                         ),
                     },
                     {"role": "user", "content": clean_text},
@@ -156,66 +299,28 @@ class LinkPreviewer:
             return self.cache[url]
 
         print(f"[fetch] {url}")
-        try:
-            response = self.session.get(
-                url, headers={"User-Agent": USER_AGENT}, timeout=8
-            )
-            if not response.ok or "text/html" not in response.headers.get(
-                "content-type", ""
-            ):
-                print(f"[fetch] skipped (status/content-type): {url}")
-                self.cache[url] = None
-                return None
-        except requests.RequestException:
-            print(f"[fetch] error: {url}")
-            self.cache[url] = None
-            return None
 
-        meta_parser = MetaParser()
-        try:
-            meta_parser.feed(response.text)
-        except Exception:
-            print(f"[fetch] parse error: {url}")
-            self.cache[url] = None
-            return None
+        # Find matching fetcher and get description.
+        description: Optional[str] = None
+        for pattern, fetcher in FETCHERS:
+            if pattern.search(url):
+                description = fetcher(url)
+                break
 
-        try:
-            description = extract_text(response.text)
-        except Exception:
-            print(f"[fetch] text parse error: {url}")
-            description = None
+        print("[fetch] Done, summarizing...")
 
-        summary: Optional[str] = None
-        if description:
-            summary = (
-                self.summarizer.summarize(description) if self.summarizer else None
-            )
-        if summary:
-            description = summary
-        else:
-            meta_description = self._best_description(meta_parser.meta)
-            if meta_description:
-                description = meta_description
+        # Try to summarize the description.
+        if description and self.summarizer:
+            summary = self.summarizer.summarize(description)
+            if summary:
+                description = summary
 
+        # Normalize and cache.
         if description:
             description = self._normalize(description)
         self.cache[url] = description or None
         print(f"[fetch] {description}")
         return description
-
-    @staticmethod
-    def _best_description(meta: Dict[str, str]) -> Optional[str]:
-        for key in (
-            "og:description",
-            "description",
-            "twitter:description",
-            "og:title",
-            "title",
-        ):
-            value = meta.get(key)
-            if value:
-                return value
-        return None
 
     @staticmethod
     def _normalize(text: str) -> str:
