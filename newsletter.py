@@ -214,8 +214,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     parser.add_argument(
         "--model",
-        default="gpt-5.1",
-        help="OpenAI chat model to use (default: gpt-5.1).",
+        default="gpt-5.2",
+        help="OpenAI chat model to use",
     )
     parser.add_argument(
         "--temperature",
