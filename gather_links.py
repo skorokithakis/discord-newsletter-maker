@@ -38,6 +38,9 @@ LINK_RE = re.compile(r"https?://\S+")
 SUMMARY_MODEL = "gpt-5-mini-2025-08-07"
 FETCHER_SESSION = requests.Session()
 
+# Number of messages to include before and after the link.
+CONTEXT_SIZE = 20
+
 
 class MetaParser(HTMLParser):
     """Lightweight HTML parser to grab meta/title tags."""
@@ -397,8 +400,8 @@ def iter_contexts(messages: Sequence[dict]) -> Iterable[tuple[List[dict], dict]]
     for idx, message in enumerate(messages):
         if not message_has_link(message):
             continue
-        start = max(0, idx - 10)
-        end = min(len(messages), idx + 11)
+        start = max(0, idx - CONTEXT_SIZE)
+        end = min(len(messages), idx + CONTEXT_SIZE + 1)
         # Return a concrete list so downstream consumers don't have to rely on slicing semantics.
         yield list(messages[start:end]), message
 
