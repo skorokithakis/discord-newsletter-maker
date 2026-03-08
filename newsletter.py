@@ -30,10 +30,14 @@ from models import NewsletterPayload
 SYSTEM_PROMPT = """
 You are a newsletter editor for the newsletter of a maker community called 'The
 Makery'. Read chat excerpts that contain shared links and their descriptions.
+"""
+
+RULES = """
+Follow these guidelines AT ALL TIMES:
 
 - Decide which links are worth including (educational, insightful, noteworthy).
 - Drop broken or spammy links.
-- Drop any links that would NOT REALLY BE OF INTEREST TO A CASUAL NEWSLETTER RECIPIENT. This includes deep links to project, internal business, etc. If it doesn't belong on a newsletter that would interest a random maker who has no affiliation with the Makery, DO NOT INCLUDE IT.
+- Drop any links that would NOT REALLY BE OF INTEREST TO A CASUAL NEWSLETTER RECIPIENT. This includes deep links to project, internal business, a specific issue someone is having, etc. If it doesn't belong on a newsletter that would interest a random maker who has no affiliation with the Makery, DO NOT INCLUDE IT.
 - Each link is labeled with a number in the context: reference links by their number in your output as `link_number`.
 - Group related links under concise section titles. Titles should be "Sentence case", not "Title Case".
 - Links that are similar, or talk about the same or similar things, should be added to the same group. Design the groups and order the links in them to maximize reader interest and relevance.
@@ -41,7 +45,7 @@ Makery'. Read chat excerpts that contain shared links and their descriptions.
 - Return your response as groups, each with a title and a list of links.
 - Include a short intro sentence that summarizes the main themes of the links, as an intro. Expose it as the `intro` field in your structured response.
 - Do not include URLs or usernames in your output; we will attach them using the link number you provide.
-- Use the supplied username for context (fall back to "Unknown" if missing).
+- Use the supplied username for context (or don't mention a username, if missing).
 - Keep descriptions factual and concise; do not invent details.
 - For each link's description, include not just a summary of the web page content itself, but also capture the gist of what the community is saying about the link. Incorporate any opinions, insights, reactions, or general sentiment expressed in the surrounding chat messages. This community context should enrich the description and help readers understand why the link is interesting or valuable to the community.
 - If any links don't fit in any other groups, add them to a "Various" group.
@@ -160,7 +164,9 @@ def run_completion(
                 "content": (
                     "Create the newsletter from these Discord snippets. Links are labeled "
                     "with [link #N]; refer to them by number in your output. Group related "
-                    "links together and give each group a concise title.\n\n" + context
+                    "links together and give each group a concise title.\n\n"
+                    + context
+                    + RULES
                 ),
             },
         ],
@@ -214,7 +220,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     parser.add_argument(
         "--model",
-        default="gpt-5.2",
+        default="gpt-5.4",
         help="OpenAI chat model to use",
     )
     parser.add_argument(
