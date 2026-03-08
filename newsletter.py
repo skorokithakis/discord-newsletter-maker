@@ -57,6 +57,8 @@ Follow these guidelines AT ALL TIMES:
 - For each link's description, include not just a summary of the web page content itself, but also capture the gist of what the community is saying about the link. Incorporate any opinions, insights, reactions, or general sentiment expressed in the surrounding chat messages. This community context should enrich the description and help readers understand why the link is interesting or valuable to the community.
 - If any links don't fit in any other groups, add them to a "Various" group.
 - Don't include memes and jokes.
+- For each link you include, provide a brief `justification` explaining why it is newsletter-worthy.
+- For every link you exclude, add an entry to `excluded_links` with its `link_number` and a brief `justification` explaining why it was dropped.
 """.strip()
 
 DEFAULT_MODELS: dict[str, str] = {
@@ -74,6 +76,12 @@ class LLMNewsletterLink(BaseModel):
     title: str
     description: str
     link_number: int
+    justification: str
+
+
+class LLMExcludedLink(BaseModel):
+    link_number: int
+    justification: str
 
 
 class LLMNewsletterGroup(BaseModel):
@@ -84,6 +92,7 @@ class LLMNewsletterGroup(BaseModel):
 class LLMNewsletterPayload(BaseModel):
     intro: str
     groups: List[LLMNewsletterGroup]
+    excluded_links: List[LLMExcludedLink]
 
 
 def load_contexts(path: Path) -> List[dict]:
@@ -298,6 +307,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     print(
         f"Wrote {total_links} links across {len(payload.groups)} groups to curated_links.json"
     )
+
+    print("\n=== Link justifications ===")
+    included_links = [link for group in llm_payload.groups for link in group.links]
+    for link in sorted(included_links, key=lambda link: link.link_number):
+        url = link_lookup.get(link.link_number, {}).get("url", "")
+        print(f'[INCLUDED] #{link.link_number} ({url}) — "{link.justification}"')
+    for excluded in sorted(
+        llm_payload.excluded_links, key=lambda link: link.link_number
+    ):
+        url = link_lookup.get(excluded.link_number, {}).get("url", "")
+        print(
+            f'[EXCLUDED] #{excluded.link_number} ({url}) — "{excluded.justification}"'
+        )
 
 
 if __name__ == "__main__":
