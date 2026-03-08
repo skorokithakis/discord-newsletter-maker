@@ -2,6 +2,8 @@
 # /// script
 # requires-python = ">=3.13"
 # dependencies = [
+#   "anthropic",
+#   "instructor",
 #   "openai",
 #   "pydantic",
 # ]
@@ -15,13 +17,18 @@ from pathlib import Path
 from typing import List
 from typing import Sequence
 
-from openai import APIConnectionError
-from openai import APIError
-from openai import APITimeoutError
-from openai import AuthenticationError
+import anthropic
+import instructor
+from anthropic import APIConnectionError as AnthropicAPIConnectionError
+from anthropic import APIError as AnthropicAPIError
+from anthropic import APITimeoutError as AnthropicAPITimeoutError
+from anthropic import AuthenticationError as AnthropicAuthenticationError
+from openai import APIConnectionError as OpenAIAPIConnectionError
+from openai import APIError as OpenAIAPIError
+from openai import APITimeoutError as OpenAIAPITimeoutError
+from openai import AuthenticationError as OpenAIAuthenticationError
 from openai import OpenAI
 from pydantic import BaseModel
-from pydantic import ValidationError
 
 from models import NewsletterGroup
 from models import NewsletterLink
@@ -51,6 +58,16 @@ Follow these guidelines AT ALL TIMES:
 - If any links don't fit in any other groups, add them to a "Various" group.
 - Don't include memes and jokes.
 """.strip()
+
+DEFAULT_MODELS: dict[str, str] = {
+    "anthropic": "claude-opus-4-6",
+    "openai": "gpt-5.4",
+}
+
+ENV_VARS: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+}
 
 
 class LLMNewsletterLink(BaseModel):
@@ -150,38 +167,35 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
 
 
 def run_completion(
-    client: OpenAI, model: str, context: str, temperature: float
+    api_key: str, provider: str, model: str, context: str, temperature: float
 ) -> LLMNewsletterPayload:
     print(context)
-    response = client.chat.completions.parse(
-        model=model,
-        temperature=temperature,
-        response_format=LLMNewsletterPayload,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    "Create the newsletter from these Discord snippets. Links are labeled "
-                    "with [link #N]; refer to them by number in your output. Group related "
-                    "links together and give each group a concise title.\n\n"
-                    + context
-                    + RULES
-                ),
-            },
-        ],
+    user_message = (
+        "Create the newsletter from these Discord snippets. Links are labeled "
+        "with [link #N]; refer to them by number in your output. Group related "
+        "links together and give each group a concise title.\n\n" + context + RULES
     )
-    choice = response.choices[0]
-    parsed = getattr(choice.message, "parsed", None)
-    if parsed is None:
-        raise SystemExit("Model did not return parsed content.")
-    if isinstance(parsed, LLMNewsletterPayload):
-        return parsed
-    # Defensive fallback if the SDK returns a dict.
-    try:
-        return LLMNewsletterPayload.model_validate(parsed)
-    except ValidationError as exc:
-        raise SystemExit(f"Model output failed validation: {exc}") from exc
+    if provider == "anthropic":
+        patched_client = instructor.from_anthropic(anthropic.Anthropic(api_key=api_key))
+        return patched_client.messages.create(
+            model=model,
+            response_model=LLMNewsletterPayload,
+            max_tokens=16000,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+            temperature=temperature,
+        )
+    else:
+        patched_client = instructor.from_openai(OpenAI(api_key=api_key))
+        return patched_client.chat.completions.create(
+            model=model,
+            response_model=LLMNewsletterPayload,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=temperature,
+        )
 
 
 def attach_link_metadata(
@@ -219,9 +233,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Path to the JSON file containing the gathered messages with links.",
     )
     parser.add_argument(
+        "--provider",
+        choices=["anthropic", "openai"],
+        default="anthropic",
+        help="LLM provider to use (default: anthropic).",
+    )
+    parser.add_argument(
         "--model",
-        default="gpt-5.4",
-        help="OpenAI chat model to use",
+        default=None,
+        help=(
+            "Model to use. Defaults to claude-opus-4-6 for anthropic and gpt-5.4 for openai."
+        ),
     )
     parser.add_argument(
         "--temperature",
@@ -232,32 +254,41 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="OpenAI API key (defaults to OPENAI_API_KEY env var).",
+        help="API key for the chosen provider (overrides environment variable).",
     )
     args = parser.parse_args(argv)
 
-    api_key = args.api_key or os.getenv("OPENAI_API_KEY")
+    provider: str = args.provider
+    model: str = args.model or DEFAULT_MODELS[provider]
+    env_var = ENV_VARS[provider]
+    api_key = args.api_key or os.getenv(env_var)
     if not api_key:
-        raise SystemExit(
-            "Missing OpenAI API key. Set OPENAI_API_KEY or pass --api-key."
-        )
+        raise SystemExit(f"Missing API key. Set {env_var} or pass --api-key.")
 
     contexts = load_contexts(args.input)
     if not contexts:
         raise SystemExit("No link contexts found in input JSON.")
     context, link_lookup = render_contexts(contexts)
 
-    client = OpenAI(api_key=api_key)
-
     try:
         llm_payload = run_completion(
-            client=client,
-            model=args.model,
+            api_key=api_key,
+            provider=provider,
+            model=model,
             context=context,
             temperature=args.temperature,
         )
-    except (APIError, APIConnectionError, APITimeoutError, AuthenticationError) as exc:
-        raise SystemExit(f"OpenAI API error: {exc}") from exc
+    except (
+        OpenAIAPIError,
+        OpenAIAPIConnectionError,
+        OpenAIAPITimeoutError,
+        OpenAIAuthenticationError,
+        AnthropicAPIError,
+        AnthropicAPIConnectionError,
+        AnthropicAPITimeoutError,
+        AnthropicAuthenticationError,
+    ) as exc:
+        raise SystemExit(f"API error: {exc}") from exc
 
     payload = attach_link_metadata(llm_payload, link_lookup)
 
