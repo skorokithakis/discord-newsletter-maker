@@ -34,6 +34,33 @@ from models import NewsletterGroup
 from models import NewsletterLink
 from models import NewsletterPayload
 
+OAUTH_HEADERS = {
+    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
+    "user-agent": "claude-cli/2.1.75",
+    "x-app": "cli",
+}
+CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+
+
+def make_anthropic_client() -> anthropic.Anthropic:
+    # Remove the API key from the environment so the client doesn't use it
+    # instead of the OAuth token.
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    credentials_path = Path.home() / ".claude" / ".credentials.json"
+    if not credentials_path.exists():
+        raise SystemExit(
+            f"Claude Code credentials not found at {credentials_path}. "
+            "Log in with `claude` first."
+        )
+    credentials = json.loads(credentials_path.read_text())
+    token = credentials["claudeAiOauth"]["accessToken"]
+    return anthropic.Anthropic(
+        api_key=None,
+        auth_token=token,
+        default_headers=OAUTH_HEADERS,
+    )
+
+
 SYSTEM_PROMPT = """
 You are a newsletter editor for the newsletter of a maker community called 'The
 Makery'. Read chat excerpts that contain shared links and their descriptions.
@@ -176,22 +203,32 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
 
 
 def run_completion(
-    api_key: str, provider: str, model: str, context: str, temperature: float
+    provider: str,
+    model: str,
+    context: str,
+    temperature: float,
+    api_key: str | None = None,
 ) -> LLMNewsletterPayload:
-    print(context)
     user_message = (
         "Create the newsletter from these Discord snippets. Links are labeled "
         "with [link #N]; refer to them by number in your output. Group related "
         "links together and give each group a concise title.\n\n" + context + RULES
     )
     if provider == "anthropic":
-        patched_client = instructor.from_anthropic(anthropic.Anthropic(api_key=api_key))
+        patched_client = instructor.from_anthropic(
+            make_anthropic_client()
+        )
+        # The Claude Code OAuth endpoint only allows the Claude Code system
+        # prefix; any additional system text causes a 400 error. We prepend
+        # SYSTEM_PROMPT to the user message instead.
         return patched_client.messages.create(
             model=model,
             response_model=LLMNewsletterPayload,
             max_tokens=16000,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
+            system=CLAUDE_CODE_SYSTEM_PREFIX,
+            messages=[
+                {"role": "user", "content": SYSTEM_PROMPT + "\n\n" + user_message}
+            ],
             temperature=temperature,
         )
     else:
@@ -269,10 +306,13 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     provider: str = args.provider
     model: str = args.model or DEFAULT_MODELS[provider]
-    env_var = ENV_VARS[provider]
-    api_key = args.api_key or os.getenv(env_var)
-    if not api_key:
-        raise SystemExit(f"Missing API key. Set {env_var} or pass --api-key.")
+    api_key: str | None = None
+    if provider == "openai":
+        api_key = args.api_key or os.getenv(ENV_VARS[provider])
+        if not api_key:
+            raise SystemExit(
+                f"Missing API key. Set {ENV_VARS[provider]} or pass --api-key."
+            )
 
     contexts = load_contexts(args.input)
     if not contexts:
@@ -281,11 +321,11 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     try:
         llm_payload = run_completion(
-            api_key=api_key,
             provider=provider,
             model=model,
             context=context,
             temperature=args.temperature,
+            api_key=api_key,
         )
     except (
         OpenAIAPIError,
