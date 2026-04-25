@@ -4,7 +4,6 @@
 # dependencies = [
 #   "anthropic",
 #   "instructor",
-#   "openai",
 #   "pydantic",
 # ]
 # ///
@@ -19,46 +18,22 @@ from typing import Sequence
 
 import anthropic
 import instructor
-from anthropic import APIConnectionError as AnthropicAPIConnectionError
-from anthropic import APIError as AnthropicAPIError
-from anthropic import APITimeoutError as AnthropicAPITimeoutError
-from anthropic import AuthenticationError as AnthropicAuthenticationError
-from openai import APIConnectionError as OpenAIAPIConnectionError
-from openai import APIError as OpenAIAPIError
-from openai import APITimeoutError as OpenAIAPITimeoutError
-from openai import AuthenticationError as OpenAIAuthenticationError
-from openai import OpenAI
+from anthropic import APIConnectionError
+from anthropic import APIError
+from anthropic import APITimeoutError
+from anthropic import AuthenticationError
 from pydantic import BaseModel
 
 from models import NewsletterGroup
 from models import NewsletterLink
 from models import NewsletterPayload
 
-OAUTH_HEADERS = {
-    "anthropic-beta": "claude-code-20250219,oauth-2025-04-20",
-    "user-agent": "claude-cli/2.1.75",
-    "x-app": "cli",
-}
-CLAUDE_CODE_SYSTEM_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+DEFAULT_ANTHROPIC_API_URL = "https://api.anthropic.com"
 
 
-def make_anthropic_client() -> anthropic.Anthropic:
-    # Remove the API key from the environment so the client doesn't use it
-    # instead of the OAuth token.
-    os.environ.pop("ANTHROPIC_API_KEY", None)
-    credentials_path = Path.home() / ".claude" / ".credentials.json"
-    if not credentials_path.exists():
-        raise SystemExit(
-            f"Claude Code credentials not found at {credentials_path}. "
-            "Log in with `claude` first."
-        )
-    credentials = json.loads(credentials_path.read_text())
-    token = credentials["claudeAiOauth"]["accessToken"]
-    return anthropic.Anthropic(
-        api_key=None,
-        auth_token=token,
-        default_headers=OAUTH_HEADERS,
-    )
+def make_anthropic_client(api_key: str) -> anthropic.Anthropic:
+    base_url = os.getenv("ANTHROPIC_API_URL", DEFAULT_ANTHROPIC_API_URL)
+    return anthropic.Anthropic(base_url=base_url, api_key=api_key)
 
 
 SYSTEM_PROMPT = """
@@ -88,15 +63,8 @@ Follow these guidelines AT ALL TIMES:
 - For every link you exclude, add an entry to `excluded_links` with its `link_number` and a brief `justification` explaining why it was dropped.
 """.strip()
 
-DEFAULT_MODELS: dict[str, str] = {
-    "anthropic": "claude-opus-4-6",
-    "openai": "gpt-5.4",
-}
-
-ENV_VARS: dict[str, str] = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-}
+DEFAULT_MODEL = "claude-opus-4-6"
+API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 
 
 class LLMNewsletterLink(BaseModel):
@@ -203,45 +171,25 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
 
 
 def run_completion(
-    provider: str,
     model: str,
     context: str,
     temperature: float,
-    api_key: str | None = None,
+    api_key: str,
 ) -> LLMNewsletterPayload:
     user_message = (
         "Create the newsletter from these Discord snippets. Links are labeled "
         "with [link #N]; refer to them by number in your output. Group related "
         "links together and give each group a concise title.\n\n" + context + RULES
     )
-    if provider == "anthropic":
-        patched_client = instructor.from_anthropic(
-            make_anthropic_client()
-        )
-        # The Claude Code OAuth endpoint only allows the Claude Code system
-        # prefix; any additional system text causes a 400 error. We prepend
-        # SYSTEM_PROMPT to the user message instead.
-        return patched_client.messages.create(
-            model=model,
-            response_model=LLMNewsletterPayload,
-            max_tokens=16000,
-            system=CLAUDE_CODE_SYSTEM_PREFIX,
-            messages=[
-                {"role": "user", "content": SYSTEM_PROMPT + "\n\n" + user_message}
-            ],
-            temperature=temperature,
-        )
-    else:
-        patched_client = instructor.from_openai(OpenAI(api_key=api_key))
-        return patched_client.chat.completions.create(
-            model=model,
-            response_model=LLMNewsletterPayload,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=temperature,
-        )
+    patched_client = instructor.from_anthropic(make_anthropic_client(api_key))
+    return patched_client.messages.create(
+        model=model,
+        response_model=LLMNewsletterPayload,
+        max_tokens=16000,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_message}],
+        temperature=temperature,
+    )
 
 
 def attach_link_metadata(
@@ -279,17 +227,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="Path to the JSON file containing the gathered messages with links.",
     )
     parser.add_argument(
-        "--provider",
-        choices=["anthropic", "openai"],
-        default="anthropic",
-        help="LLM provider to use (default: anthropic).",
-    )
-    parser.add_argument(
         "--model",
-        default=None,
-        help=(
-            "Model to use. Defaults to claude-opus-4-6 for anthropic and gpt-5.4 for openai."
-        ),
+        default=DEFAULT_MODEL,
+        help=f"Anthropic model to use (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
         "--temperature",
@@ -300,19 +240,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--api-key",
         default=None,
-        help="API key for the chosen provider (overrides environment variable).",
+        help=f"Anthropic API key (overrides {API_KEY_ENV_VAR}).",
     )
     args = parser.parse_args(argv)
 
-    provider: str = args.provider
-    model: str = args.model or DEFAULT_MODELS[provider]
-    api_key: str | None = None
-    if provider == "openai":
-        api_key = args.api_key or os.getenv(ENV_VARS[provider])
-        if not api_key:
-            raise SystemExit(
-                f"Missing API key. Set {ENV_VARS[provider]} or pass --api-key."
-            )
+    api_key = args.api_key or os.getenv(API_KEY_ENV_VAR)
+    if not api_key:
+        raise SystemExit(
+            f"Missing API key. Set {API_KEY_ENV_VAR} or pass --api-key."
+        )
 
     contexts = load_contexts(args.input)
     if not contexts:
@@ -321,21 +257,16 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     try:
         llm_payload = run_completion(
-            provider=provider,
-            model=model,
+            model=args.model,
             context=context,
             temperature=args.temperature,
             api_key=api_key,
         )
     except (
-        OpenAIAPIError,
-        OpenAIAPIConnectionError,
-        OpenAIAPITimeoutError,
-        OpenAIAuthenticationError,
-        AnthropicAPIError,
-        AnthropicAPIConnectionError,
-        AnthropicAPITimeoutError,
-        AnthropicAuthenticationError,
+        APIError,
+        APIConnectionError,
+        APITimeoutError,
+        AuthenticationError,
     ) as exc:
         raise SystemExit(f"API error: {exc}") from exc
 

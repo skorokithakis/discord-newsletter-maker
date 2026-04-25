@@ -5,7 +5,7 @@
 #   "requests",
 #   "beautifulsoup4",
 #   "yt-info-extract",
-#   "openai",
+#   "anthropic",
 # ]
 # ///
 import argparse
@@ -24,18 +24,19 @@ from typing import Sequence
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
 
+import anthropic
 import requests
+from anthropic import APIConnectionError
+from anthropic import APIError
+from anthropic import APITimeoutError
+from anthropic import AuthenticationError
 from bs4 import BeautifulSoup
-from openai import APIConnectionError
-from openai import APIError
-from openai import APITimeoutError
-from openai import AuthenticationError
-from openai import OpenAI
 from yt_info_extract import get_video_info
 
 USER_AGENT = "discord-newsletter-fetcher/0.1 (+https://example.invalid)"
 LINK_RE = re.compile(r"https?://\S+")
-SUMMARY_MODEL = "gpt-5-mini-2025-08-07"
+SUMMARY_MODEL = "claude-sonnet-4-6"
+DEFAULT_ANTHROPIC_API_URL = "https://api.anthropic.com"
 FETCHER_SESSION = requests.Session()
 
 # Number of messages to include before and after the link.
@@ -265,12 +266,21 @@ FETCHERS: List[tuple[re.Pattern, Callable[[str], Optional[str]]]] = [
 ]
 
 
+SUMMARY_SYSTEM_PROMPT = (
+    "You summarize long web pages into 2-3 concise English sentences. "
+    "Focus on the main topic, key findings, and notable details "
+    "that would matter to a newsletter reader. Return the empty "
+    "string if there wasn't enough information in the text for a"
+    " summary."
+)
+
+
 class PageSummarizer:
     """Wrap a small LLM call to summarize page text."""
 
     def __init__(
         self,
-        client: Optional[OpenAI],
+        client: Optional[anthropic.Anthropic],
         model: str = SUMMARY_MODEL,
     ) -> None:
         self.client = client
@@ -278,15 +288,16 @@ class PageSummarizer:
 
     @classmethod
     def create(cls) -> "PageSummarizer":
-        client: Optional[OpenAI]
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if not api_key:
+            print("[summary] ANTHROPIC_API_KEY not set; skipping summaries.")
+            return cls(client=None)
         try:
-            api_key = os.getenv("OPENAI_API_KEY")
-            client = OpenAI(api_key=api_key) if api_key else None
-            if client is None:
-                print("[summary] OPENAI_API_KEY not set; skipping summaries.")
+            base_url = os.getenv("ANTHROPIC_API_URL", DEFAULT_ANTHROPIC_API_URL)
+            client = anthropic.Anthropic(base_url=base_url, api_key=api_key)
         except Exception as exc:
-            print(f"[summary] Failed to initialize OpenAI client: {exc}")
-            client = None
+            print(f"[summary] Failed to initialize Anthropic client: {exc}")
+            return cls(client=None)
         return cls(client=client)
 
     def summarize(self, text: str) -> Optional[str]:
@@ -298,21 +309,11 @@ class PageSummarizer:
             return None
 
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.messages.create(
                 model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You summarize long web pages into 2-3 concise English sentences. "
-                            "Focus on the main topic, key findings, and notable details "
-                            "that would matter to a newsletter reader. Return the empty "
-                            "string if there wasn't enough information in the text for a"
-                            " summary."
-                        ),
-                    },
-                    {"role": "user", "content": clean_text},
-                ],
+                max_tokens=512,
+                system=SUMMARY_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": clean_text}],
             )
         except (
             APIError,
@@ -320,17 +321,18 @@ class PageSummarizer:
             APITimeoutError,
             AuthenticationError,
         ) as exc:
-            print(f"[summary] OpenAI API error: {exc}")
+            print(f"[summary] Anthropic API error: {exc}")
             return None
         except Exception as exc:  # defensive catch-all
             print(f"[summary] Unexpected error: {exc}")
             return None
 
-        choice = response.choices[0]
-        content = getattr(choice.message, "content", None)
-        if not content:
-            return None
-        return content.strip()
+        for block in response.content:
+            if getattr(block, "type", None) == "text":
+                content = getattr(block, "text", "").strip()
+                if content:
+                    return content
+        return None
 
 
 class LinkPreviewer:
