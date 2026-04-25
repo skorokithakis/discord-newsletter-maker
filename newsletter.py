@@ -50,6 +50,7 @@ Follow these guidelines AT ALL TIMES:
 - Each link is labeled with a number in the context: reference links by their number in your output as `link_number`.
 - Group related links under concise section titles. Titles should be "Sentence case", not "Title Case".
 - Links that are similar, or talk about the same or similar things, should be added to the same group. Design the groups and order the links in them to maximize reader interest and relevance.
+- Links to projects that members of the community made themselves (i.e. the poster is showing off their own work) MUST go in a dedicated group, and that group MUST be the first group in the newsletter. Use a title like "Made by us" for this group. If there are no such links, omit the group.
 - Populate the structured fields: title, description, and link_number.
 - Return your response as groups, each with a title and a list of links.
 - Include a short intro sentence that summarizes the main themes of the links, as an intro. Expose it as the `intro` field in your structured response.
@@ -63,7 +64,7 @@ Follow these guidelines AT ALL TIMES:
 - For every link you exclude, add an entry to `excluded_links` with its `link_number` and a brief `justification` explaining why it was dropped.
 """.strip()
 
-DEFAULT_MODEL = "claude-opus-4-6"
+DEFAULT_MODEL = "claude-opus-4-7"
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 
 
@@ -182,14 +183,25 @@ def run_completion(
         "links together and give each group a concise title.\n\n" + context + RULES
     )
     patched_client = instructor.from_anthropic(make_anthropic_client(api_key))
-    return patched_client.messages.create(
+    # Adaptive extended thinking requires temperature=1; --temperature is
+    # therefore ignored when thinking is enabled.
+    del temperature
+    payload, completion = patched_client.messages.create_with_completion(
         model=model,
         response_model=LLMNewsletterPayload,
         max_tokens=16000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
-        temperature=temperature,
+        temperature=1,
+        thinking={"type": "adaptive", "display": "summarized"},
+        output_config={"effort": "medium"},
     )
+    for block in getattr(completion, "content", []) or []:
+        if getattr(block, "type", None) == "thinking":
+            print("--- Thinking ---")
+            print(block.thinking)
+            print("---")
+    return payload
 
 
 def attach_link_metadata(
