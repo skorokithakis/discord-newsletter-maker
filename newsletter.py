@@ -182,7 +182,11 @@ def run_completion(
         "with [link #N]; refer to them by number in your output. Group related "
         "links together and give each group a concise title.\n\n" + context + RULES
     )
-    patched_client = instructor.from_anthropic(make_anthropic_client(api_key))
+    # Use JSON mode instead of the default tool mode: extended thinking is
+    # incompatible with forced tool use, which instructor's tool mode requires.
+    patched_client = instructor.from_anthropic(
+        make_anthropic_client(api_key), mode=instructor.Mode.ANTHROPIC_JSON
+    )
     # Adaptive extended thinking requires temperature=1; --temperature is
     # therefore ignored when thinking is enabled.
     del temperature
@@ -258,9 +262,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     api_key = args.api_key or os.getenv(API_KEY_ENV_VAR)
     if not api_key:
-        raise SystemExit(
-            f"Missing API key. Set {API_KEY_ENV_VAR} or pass --api-key."
-        )
+        raise SystemExit(f"Missing API key. Set {API_KEY_ENV_VAR} or pass --api-key.")
 
     contexts = load_contexts(args.input)
     if not contexts:
