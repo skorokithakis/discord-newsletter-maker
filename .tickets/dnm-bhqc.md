@@ -15,4 +15,3 @@ Change newsletter.py so the Anthropic provider uses a standard API key + configu
 ## Acceptance Criteria
 
 Running with --provider anthropic requires ANTHROPIC_API_KEY (or --api-key). ANTHROPIC_API_URL overrides the default endpoint. OpenAI path unchanged.
-

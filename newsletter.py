@@ -174,7 +174,6 @@ def render_contexts(contexts: Sequence[dict]) -> tuple[str, dict[int, dict[str, 
 def run_completion(
     model: str,
     context: str,
-    temperature: float,
     api_key: str,
 ) -> LLMNewsletterPayload:
     user_message = (
@@ -187,16 +186,12 @@ def run_completion(
     patched_client = instructor.from_anthropic(
         make_anthropic_client(api_key), mode=instructor.Mode.ANTHROPIC_JSON
     )
-    # Adaptive extended thinking requires temperature=1; --temperature is
-    # therefore ignored when thinking is enabled.
-    del temperature
     payload, completion = patched_client.messages.create_with_completion(
         model=model,
         response_model=LLMNewsletterPayload,
         max_tokens=16000,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}],
-        temperature=1,
         thinking={"type": "adaptive", "display": "summarized"},
         output_config={"effort": "medium"},
     )
@@ -248,12 +243,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         help=f"Anthropic model to use (default: {DEFAULT_MODEL}).",
     )
     parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.4,
-        help="Sampling temperature for the model (default: 0.4).",
-    )
-    parser.add_argument(
         "--api-key",
         default=None,
         help=f"Anthropic API key (overrides {API_KEY_ENV_VAR}).",
@@ -273,7 +262,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         llm_payload = run_completion(
             model=args.model,
             context=context,
-            temperature=args.temperature,
             api_key=api_key,
         )
     except (

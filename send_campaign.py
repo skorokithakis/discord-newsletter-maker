@@ -106,7 +106,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print the rendered body to stdout before sending",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    # A trailing slash would produce "//api/..." URLs, which Listmonk answers with 404.
+    args.url = args.url.rstrip("/")
+    return args
 
 
 BORDER_COLORS = ["#9B8AA5", "#E8847C", "#F5A962", "#5B9AA9"]
