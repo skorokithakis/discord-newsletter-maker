@@ -35,7 +35,7 @@ from yt_info_extract import get_video_info
 
 USER_AGENT = "discord-newsletter-fetcher/0.1 (+https://example.invalid)"
 LINK_RE = re.compile(r"https?://\S+")
-SUMMARY_MODEL = "claude-sonnet-4-6"
+SUMMARY_MODEL = "claude-sonnet-5-5"
 DEFAULT_ANTHROPIC_API_URL = "https://api.anthropic.com"
 FETCHER_SESSION = requests.Session()
 

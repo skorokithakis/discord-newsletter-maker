@@ -64,7 +64,7 @@ Follow these guidelines AT ALL TIMES:
 - For every link you exclude, add an entry to `excluded_links` with its `link_number` and a brief `justification` explaining why it was dropped.
 """.strip()
 
-DEFAULT_MODEL = "claude-opus-4-7"
+DEFAULT_MODEL = "claude-opus-5-5"
 API_KEY_ENV_VAR = "ANTHROPIC_API_KEY"
 
 
